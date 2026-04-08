@@ -1,0 +1,84 @@
+REPORT ZPP_ORDENS.
+
+DATA: ls_ordem   TYPE BAPI_PP_ORDER_CHANGE,
+      ls_ordemx  TYPE BAPI_PP_ORDER_CHANGEX,
+      ls_return  TYPE BAPIRET2,
+      ld_ordemt  TYPE BAPI_ORDER_COPY-ORDER_TYPE,
+      ld_ordems  TYPE BAPI_ORDER_STATUS,
+      ld_ordemm  TYPE BAPIFLAG-BAPIFLAG.
+
+TYPES: BEGIN OF sdata,
+         ordem TYPE AUFNR,
+         qtd   TYPE WEMNG,
+       END OF sdata.
+
+DATA: lt_data TYPE STANDARD TABLE OF sdata,
+      ls_data TYPE sdata.
+
+SELECTION-SCREEN BEGIN OF BLOCK b1
+  WITH FRAME title text-001.
+
+SELECT-OPTIONS ordem FOR ls_data-ORDEM.
+
+ls_ordemx-quantity = 'X'.
+
+SELECTION-SCREEN END OF BLOCK b1.
+
+
+AT SELECTION-SCREEN.
+
+IF ordem[] is INITIAL.
+
+  message 'Nenhuma ordem preenchida' TYPE 'E'.
+
+ENDIF.
+
+
+START-OF-SELECTION.
+
+SELECT aufnr, wemng
+  FROM afpo
+  INTO TABLE @lt_data
+  WHERE aufnr IN @ordem.
+
+LOOP AT lt_data INTO ls_data.
+
+  WRITE: / ls_data-ordem,
+           ls_data-qtd.
+
+  ls_ordem-quantity = ls_data-qtd.
+  IF ls_ordem-quantity <> 0.
+  CALL FUNCTION 'BAPI_PRODORD_CHANGE'
+    EXPORTING
+      number      = ls_data-ordem
+      orderdata   = ls_ordem
+      orderdatax  = ls_ordemx
+    IMPORTING
+      return           = ls_return
+      order_type       = ld_ordemt
+      order_status     = ld_ordems
+      master_data_read = ld_ordemm.
+
+   ELSEIF ls_ordem-quantity = 0.
+
+  ls_ordem-quantity = 1.
+
+  CALL FUNCTION 'BAPI_PRODORD_CHANGE'
+    EXPORTING
+      number      = ls_data-ordem
+      orderdata   = ls_ordem
+      orderdatax  = ls_ordemx
+    IMPORTING
+      return           = ls_return
+      order_type       = ld_ordemt
+      order_status     = ld_ordems
+      master_data_read = ld_ordemm.
+
+   ENDIF.
+  CLEAR ls_ordem.
+
+ENDLOOP.
+
+CALL FUNCTION 'BAPI_TRANSACTION_COMMIT'
+  EXPORTING
+    wait = 'X'.
