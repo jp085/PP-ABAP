@@ -1,0 +1,93 @@
+REPORT ZPP_CONF.
+
+
+DATA: lt_timetickets TYPE TABLE OF bapi_pp_timeticket,
+      ls_timeticket  TYPE bapi_pp_timeticket,
+      ls_return      TYPE bapiret1,
+      lt_detail_ret  TYPE TABLE OF bapi_coru_return,
+      ls_detail_ret  TYPE bapi_coru_return,
+      ld_ordens      TYPE AUFNR.
+
+TYPES: BEGIN OF ope,
+       ordem TYPE AUFNR,
+       END OF ope.
+
+TYPES: BEGIN OF result,
+       ordem    TYPE AUFNR,
+       operacao TYPE VORNR,
+       END OF result.
+
+DATA: ls_ordens TYPE ope,
+      lt_result TYPE STANDARD TABLE OF result,
+      ls_result TYPE result.
+
+CLEAR ls_timeticket.
+
+SELECTION-SCREEN BEGIN OF BLOCK B1.
+
+  SELECT-OPTIONS ordens FOR ld_ordens.
+  PARAMETERS Data TYPE datum.
+
+SELECTION-SCREEN END OF BLOCK B1.
+
+"tabela de operações da ordem V_AFVC_AFKO
+
+SELECT aufnr AS ordem,
+       MAX( vornr ) AS operacao
+  INTO @ls_result
+  FROM v_afvc_afko
+  WHERE aufnr IN @ordens
+  GROUP BY aufnr.
+
+ls_timeticket-orderid         = ls_result-ORDEM. "Ordem de produção.
+ls_timeticket-operation       = ls_result-OPERACAO.         "operações da ordem.
+ls_timeticket-yield           = '0'.         "Quantidade a apontar.
+ls_timeticket-conf_quan_unit  = 'KG'.           "Unidade de medida do apontamento
+ls_timeticket-postg_date      = Data.     "Data no estilo SAP.
+ls_timeticket-plant           = '2001'.         "Centro de operação.
+ls_timeticket-fin_conf        = 'X'.
+ls_timeticket-clear_res       = 'X'.
+
+APPEND ls_timeticket TO lt_timetickets.
+CLEAR ls_timeticket.
+
+ENDSELECT.
+
+CALL FUNCTION 'BAPI_PRODORDCONF_CREATE_TT'
+  EXPORTING
+    post_wrong_entries = '0'
+  IMPORTING
+    return             = ls_return
+  TABLES
+    timetickets        = lt_timetickets
+    detail_return      = lt_detail_ret.
+
+
+IF ls_return-type <> 'E' AND ls_return-type <> 'A'.
+  CALL FUNCTION 'BAPI_TRANSACTION_COMMIT'
+    EXPORTING
+      wait = 'X'.
+ENDIF.
+
+CLEAR lt_timetickets.
+
+IF ls_return-type = 'E' OR ls_return-type = 'A'.
+  WRITE: / 'Erro geral:', ls_return-message.
+ENDIF.
+
+LOOP AT lt_detail_ret INTO ls_detail_ret.
+  WRITE: / ls_detail_ret-type,
+           ls_detail_ret-id,
+           ls_detail_ret-number,
+           ls_detail_ret-message.
+ENDLOOP.
+
+CLEAR lt_detail_ret.
+
+AT SELECTION-SCREEN.
+  IF ORDENS[] IS INITIAL.
+    MESSAGE 'Sem ordens preenchidas' TYPE 'E'.
+  ENDIF.
+  IF DATA IS INITIAL.
+    MESSAGE 'Sem data preenchida' TYPE 'E'.
+  ENDIF.
