@@ -1,0 +1,67 @@
+REPORT zpp_ordenscriadas.
+
+TYPES: BEGIN OF ty_ordem,
+         aufnr TYPE aufk-aufnr,
+       END OF ty_ordem.
+
+DATA: lt_table TYPE STANDARD TABLE OF ty_ordem,
+      lt_aufk  TYPE STANDARD TABLE OF ty_ordem,
+      lt_afru  TYPE STANDARD TABLE OF ty_ordem,
+      ld_data  TYPE erdat,
+      lo_alv   TYPE REF TO cl_salv_table.
+
+SELECTION-SCREEN BEGIN OF BLOCK b1.
+  SELECT-OPTIONS datas FOR ld_data.
+SELECTION-SCREEN END OF BLOCK b1.
+
+AT SELECTION-SCREEN.
+  IF datas IS INITIAL.
+    MESSAGE 'Datas não preenchidas' TYPE 'E'.
+  ENDIF.
+
+START-OF-SELECTION.
+
+* # 1. Ordens criadas pela data (AUFK)
+  SELECT DISTINCT aufnr
+    FROM aufk
+    WHERE erdat IN @datas
+      AND werks = '2001'
+      AND auart IN ( 'ZP01', 'ZP02', 'ZP03', 'ZP04', 'ZP05', 'ZP06', 'ZP16' )
+    INTO TABLE @lt_aufk.
+
+* # 2. Ordens com confirmação (AFRU)
+  SELECT DISTINCT af~aufnr
+    FROM afru AS af
+    INNER JOIN aufk AS ak
+      ON ak~aufnr = af~aufnr
+    WHERE af~budat IN @datas
+      AND ak~werks = '2001'
+      AND ak~auart IN ( 'ZP01', 'ZP02', 'ZP03', 'ZP04', 'ZP05', 'ZP06', 'ZP16' )
+    INTO TABLE @lt_afru.
+
+* # 3. Junta os resultado
+  lt_table = lt_aufk.
+  APPEND LINES OF lt_afru TO lt_table.
+
+* # 4. Remove duplicados
+  SORT lt_table BY aufnr.
+  DELETE ADJACENT DUPLICATES FROM lt_table COMPARING aufnr.
+
+  IF lt_table IS INITIAL.
+    MESSAGE 'Nenhum registro encontrado.' TYPE 'I'.
+    RETURN.
+  ENDIF.
+
+* # 5. ALV
+  TRY.
+      cl_salv_table=>factory(
+        IMPORTING r_salv_table = lo_alv
+        CHANGING  t_table      = lt_table ).
+
+      lo_alv->get_functions( )->set_all( abap_true ).
+      lo_alv->get_columns( )->set_optimize( abap_true ).
+      lo_alv->display( ).
+
+    CATCH cx_salv_msg INTO DATA(lx_erro).
+      MESSAGE lx_erro->get_text( ) TYPE 'E'.
+  ENDTRY.
