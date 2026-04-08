@@ -1,4 +1,4 @@
 # PP-ABAP
 Encerramento mensal de ordens de produção.
 Olá, segue programa de encerramento mensal de ordens.
-BAPI'S utilizadas:
+As BAPI'S utilizadas são voltadas ao módulo Planejamento e produção (PP) do SAP.
