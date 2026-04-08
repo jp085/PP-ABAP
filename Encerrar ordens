@@ -1,0 +1,80 @@
+REPORT ZPP_ENCEORDENS.
+
+DATA: lt_ordens        TYPE STANDARD TABLE OF BAPI_ORDER_KEY,
+      ls_ordens        TYPE BAPI_ORDER_KEY,
+      ld_ordens        TYPE AUFNR,
+      l_dialog_status  TYPE C,
+      lt_return        TYPE TABLE OF bapiret2,
+      ls_return        TYPE bapiret2,
+      lv_answer        TYPE C.
+
+SELECTION-SCREEN BEGIN OF BLOCK B1.
+  SELECT-OPTIONS ordens FOR ld_ordens.
+SELECTION-SCREEN END OF BLOCK B1.
+
+AT SELECTION-SCREEN.
+  IF ordens IS INITIAL.
+    MESSAGE 'Ordens não preenchidas' TYPE 'E'.
+  ENDIF.
+
+START-OF-SELECTION.
+
+  " 1. Pop-up de confirmação
+  CALL FUNCTION 'POPUP_TO_CONFIRM'
+    EXPORTING
+      titlebar              = 'Encerrar Ordens'
+      text_question         = 'Deseja encerrar tecnicamente as ordens selecionadas?'
+      text_button_1         = 'Sim'
+      icon_button_1         = 'ICON_OKAY'
+      text_button_2         = 'Não'
+      icon_button_2         = 'ICON_CANCEL'
+      default_button        = '1'
+      display_cancel_button = ' '
+    IMPORTING
+      answer                = lv_answer.
+
+  CHECK lv_answer = '1'.
+
+  " 2. Busca as ordens
+  SELECT aufnr
+    FROM aufk
+    INTO TABLE @DATA(lt_aufnr)
+    WHERE aufnr IN @ordens.
+
+  LOOP AT lt_aufnr INTO DATA(ls_aufnr).
+    ls_ordens-order_number = ls_aufnr-aufnr.
+    APPEND ls_ordens TO lt_ordens.
+  ENDLOOP.
+
+  " 4. Desativa diálogos
+  CALL FUNCTION 'DIALOG_GET_STATUS'
+    IMPORTING
+      dialog_status = l_dialog_status.
+
+  CALL FUNCTION 'DIALOG_SET_NO_DIALOG'.
+
+CALL FUNCTION 'BAPI_PRODORD_COMPLETE_TECH'
+  EXPORTING
+    scope_compl_tech = '1'          " <-- '1' padrão -> '2' força
+  IMPORTING
+    return           = ls_return
+  TABLES
+    orders           = lt_ordens.
+
+BREAK-POINT.
+  " 6. Commit
+  CALL FUNCTION 'BAPI_TRANSACTION_COMMIT'
+    EXPORTING
+      wait = 'X'.
+
+  " 7. Restaura diálogos
+  IF l_dialog_status = 'X'.
+    CALL FUNCTION 'DIALOG_SET_WITH_DIALOG'.
+  ENDIF.
+
+  LOOP AT lt_return INTO ls_return            
+    WHERE type CA 'EA'.
+    MESSAGE ls_return-message TYPE 'W'.        
+  ENDLOOP.
+
+  MESSAGE 'Processamento concluído. Verifique os avisos acima.' TYPE 'S'.
